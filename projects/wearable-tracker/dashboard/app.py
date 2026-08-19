@@ -7,7 +7,18 @@ import streamlit as st
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
+import serial
 
+from scipy.ndimage import uniform_filter1d
+
+def send_servo_command(ser, finger: int, position: int) -> None:
+    """
+    Send a close/open command to the servo controller.
+    finger: 0-4 (index to pinky)
+    position: 0 = open, 180 = closed
+    """
+    command = f"{finger},{position}\n"
+    ser.write(command.encode())
 
 # -----------------------
 # Configuration / Page
@@ -105,10 +116,14 @@ def detect_peaks_and_bpm(signal: np.ndarray, t: np.ndarray, sampling_rate: int =
     """Return peak indices, detected BPM, and the smoothed signal."""
     smoothed = gaussian_filter1d(signal, sigma=smoothing_sigma)
 
+    # Remove DC baseline by subtracting rolling mean so peaks center around zero
+    baseline = uniform_filter1d(smoothed, size=int(sampling_rate * 1.5))
+    signal_ac = smoothed - baseline
+
     peaks, _ = find_peaks(
-        smoothed,
-        distance=int(sampling_rate * 0.4),
-        prominence=0.2
+        signal_ac,
+        distance=int(sampling_rate * 0.5),   # min 0.5s between peaks = max 120 BPM
+        prominence=signal_ac.std() * 0.5     # must stand out from noise floor
     )
 
     peak_times = t[peaks]
